@@ -365,32 +365,53 @@ class MessageParser:
         bStartReset: bool = True,
     ):
         """
-        Reads out the USB connection until the connections times out, so for messages received + timeout. Data bytes are parsed,
-        sorted into full messages and then handled according to their Command Tag. Status or requested information is
-        displayed if wished and measured EIT data is stored, deleted or returned.
-        Args:
-            bSaveData: if data should be saved
-            bDeleteDataFrame: if data frame is deleted after saving data
-            sSavePath: Path where the data should be saved
-        Returns:
-            List of received data eit frames, no Status messages are saved
+        Read USB data until the configured measurement
+        is complete or the connection remains idle.
+
+        Measurement reads tolerate short empty USB reads.
+        Command-response reads keep the original immediate
+        timeout behaviour.
         """
-        if bStartReset and self.setup is not None:
+
+        if (bStartReset and self.setup is not None):
             self.reset_new_data_frame()
-        timeout_count = 0
+
+        # This assignment must be outside the preceding
+        # if block because bStartReset can be False.
+        is_measurement_read = (bStartReset and self.setup is not None)
+
+        if is_measurement_read:
+            idle_timeout_seconds = 5.0
+        else:
+            idle_timeout_seconds = 0.0
+
+        last_data_time = time.monotonic()
+
         while True:
             buffer = self.device_read()
+
             if buffer:
-                for message in self.parse_received_bytes(buffer):
-                    self.interpret_message(
-                        message, bSaveData, bDeleteDataFrame, sSavePath
-                    )
-                timeout_count = 0
+                messages = (self.parse_received_bytes(buffer))
+
+                for message in messages:
+                    self.interpret_message(message,bSaveData,bDeleteDataFrame,sSavePath,)
+
+                last_data_time = (time.monotonic())
+
+                if (is_measurement_read and self.setup.burst_count > 0 and len(self.ppcData) >= self.setup.burst_count):
+                    break
+
                 continue
-            timeout_count += 1
-            if timeout_count >= 1:
-                # Break if we haven't received any data
+
+            if not is_measurement_read:
                 break
+
+            idle_duration = (time.monotonic() - last_data_time)
+
+            if (idle_duration >= idle_timeout_seconds):
+                break
+
+            time.sleep(0.01)
 
         return self.ppcData
 
