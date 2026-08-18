@@ -402,9 +402,36 @@ class EIT_16_32_64_128:
 
         # Set injection config
         el_inj = np.arange(1, setup.n_el + 1)
-        el_gnd = np.roll(el_inj, -(setup.inj_skip + 1))
-        for v_el, g_el in zip(el_inj, el_gnd):
-            self.write_command_string(bytearray([0xB0, 0x03, 0x06, v_el, g_el, 0xB0]))
+        #el_gnd = np.roll(el_inj, -(setup.inj_skip + 1))
+        #for v_el, g_el in zip(el_inj, el_gnd):
+         #   self.write_command_string(bytearray([0xB0, 0x03, 0x06, v_el, g_el, 0xB0]))
+        # Set one or several injection-skip configurations.
+        if isinstance(setup.inj_skip,(list, tuple, np.ndarray),):
+            inj_skip_values = list(setup.inj_skip)
+        else:
+            inj_skip_values = [setup.inj_skip]
+
+        if not inj_skip_values:
+            raise ValueError("inj_skip cannot be empty.")
+
+        el_inj = np.arange(1,setup.n_el + 1,)
+
+        for inj_skip in inj_skip_values:
+
+            if (isinstance(inj_skip, bool) or not isinstance(inj_skip,(int, np.integer),)):
+                raise TypeError("Every inj_skip value must be an integer. "
+                    f"Received: {inj_skip!r}")
+
+            inj_skip = int(inj_skip)
+
+            if (inj_skip < 0 or inj_skip >= setup.n_el - 1):
+                raise ValueError("inj_skip must satisfy 0 <= inj_skip < n_el - 1. "
+                    f"Received {inj_skip} for "f"{setup.n_el} electrodes."                )
+
+            el_gnd = np.roll(el_inj,-(inj_skip + 1),)
+
+            for v_el, g_el in zip(el_inj,el_gnd,):
+                self.write_command_string(bytearray([0xB0,0x03,0x06,int(v_el),int(g_el),0xB0,]))
 
         self.print_msg = True
         # Set output configuration - enable all
