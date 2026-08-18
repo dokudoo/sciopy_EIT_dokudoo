@@ -1,0 +1,60 @@
+manuals
+error_device_logs
+.update_package.sh.swp
+.eggs/
+sciopy.egg-info/
+.ipynb_checkpoints
+
+developing.ipynb
+update_package.sh
+update_test_pypi.sh
+tst_smpls
+.vscode
+3dgeo
+3dgeo/*
+32_electrodes.ipynb
+examples/npz_to_csv_enderstat.py
+examples/npz_to_csv.py
+examples/measuremet_16/*
+examples/measuremet_32/*
+sciopy/eth_*
+Driver
+ISX3-dev.ipynb
+update_docu.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+build/
+dist/
+
+# virtualenvs
+.env/
+.venv/
+.docs-venv/
+docs-venv/
+venv/
+venv*/
+
+# Sphinx build outputs & doctrees
+docs/_build/
+docs/_doctrees/
+_build/
+.doctrees/
+
+# Sphinx cache / temp
+docs/.doctrees/
+*.doctree
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# pip / wheel cache (optional)
+pip-wheel-metadata/
+*.whl
