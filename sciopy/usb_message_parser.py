@@ -186,20 +186,24 @@ class MessageParser:
         """
         self.setup = setup
         if setup is not None:
-            self.iMaxChannelGroups = setup.n_el // 16
-            self.iNumExcitationSettings = setup.n_el  # todo should be independently set
-            self.iNumFreqSettings = 1  # todo
-            self.iLenDataperFrame = (
-                self.iMaxChannelGroups
-                * 16
-                * self.iNumExcitationSettings
-                * self.iNumFreqSettings
-            )
-            self.iMessagesperFrame = (
-                self.iMaxChannelGroups
-                * self.iNumExcitationSettings
-                * self.iNumFreqSettings
-            )
+            self.iMaxChannelGroups = (setup.n_el // 16 )
+
+            if isinstance(
+                setup.inj_skip,
+                (list, tuple, np.ndarray),
+            ):
+                number_of_injection_skips = len(setup.inj_skip)
+            else:
+                number_of_injection_skips = 1
+
+            if number_of_injection_skips == 0:
+                raise ValueError("inj_skip cannot be empty.")
+
+            self.iNumExcitationSettings = (setup.n_el* number_of_injection_skips)
+
+            self.iNumFreqSettings = 1
+            self.iLenDataperFrame = (self.iMaxChannelGroups * 16 * self.iNumExcitationSettings * self.iNumFreqSettings)
+            self.iMessagesperFrame = (self.iMaxChannelGroups * self.iNumExcitationSettings * self.iNumFreqSettings)
 
             # ALL needed
             self.reset_new_data_frame()
