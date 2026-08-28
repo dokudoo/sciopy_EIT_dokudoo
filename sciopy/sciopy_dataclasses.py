@@ -4,6 +4,14 @@ from dataclasses import dataclass
 from typing import List, Tuple, Union
 import numpy.typing as npt
 
+@dataclass
+class EitFrequencyBlock:
+    """Represents one EIT excitation-frequency sweep block."""
+
+    f_min: Union[int, float]
+    f_max: Union[int, float]
+    f_count: int = 1
+    f_type: str = "lin"
 
 @dataclass
 class EitMeasurementSetup:
@@ -13,7 +21,9 @@ class EitMeasurementSetup:
     Attributes:
         burst_count (int): Number of bursts per measurement cycle.
         n_el (int): Number of electrodes used in the measurement.
-        exc_freq (int or float): Excitation frequency in Hz.
+        exc_freq (int, float, or list of EitFrequencyBlock):
+        A single excitation frequency in Hz or a list of
+        linear/logarithmic frequency sweep blocks.
         framerate (int or float): Frame rate of the measurement in Hz.
         amplitude (int or float): Amplitude of the excitation signal.
         inj_skip (int or list): Electrode(s) to skip during current injection.
@@ -23,7 +33,7 @@ class EitMeasurementSetup:
 
     burst_count: int
     n_el: int
-    exc_freq: Union[int, float]
+    exc_freq: Union[int, float,List[EitFrequencyBlock],]
     framerate: Union[int, float]
     amplitude: Union[int, float]
     inj_skip: Union[int, list]
@@ -31,7 +41,7 @@ class EitMeasurementSetup:
     adc_range: int
     mea_mode: str = "singleended"
     mea_mode_boundary: str = "internal"
-    # TBD: lin/log/sweep
+    
 
 
 @dataclass

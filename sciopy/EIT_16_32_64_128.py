@@ -10,7 +10,7 @@ from .com_util import (
 import numpy as np
 from pyftdi.ftdi import Ftdi
 
-from .sciopy_dataclasses import EitMeasurementSetup
+from .sciopy_dataclasses import (EitFrequencyBlock, EitMeasurementSetup,)
 from .usb_message_parser import (
     MessageParser,
     make_eitframes_hex,
@@ -266,29 +266,168 @@ class EIT_16_32_64_128:
 
     def update_ExcitationFrequency(self, exc_freq):
         """
-        update_ExcitationFrequencies _summary_
+        Add one or several excitation-frequency blocks.
 
         Parameters
         ----------
-        exc_freq int
-            frequency to be set from 100 Hz to 1 MHz
+        exc_freq : int, float, or list of EitFrequencyBlock
+            A scalar creates one single-frequency block.
+            A list adds one linear or logarithmic sweep block
+            for every EitFrequencyBlock.
         """
-        # Set frequencies:
-        # [CT] 0C 04 [fmin] [fmax] [fcount] [ftype] [CT]
-        self.print_msg = True
-        f_min = clTbt_sp(exc_freq)
-        f_max = clTbt_sp(exc_freq)
-        f_count = [0, 1]
-        f_type = [0]  # linear/log
-        # bytearray
-        self.write_command_string(
-            bytearray(
-                list(
-                    np.concatenate([[176, 12, 4], f_min, f_max, f_count, f_type, [176]])
-                )
+        if (
+            isinstance(exc_freq, bool)
+            or not isinstance(
+                exc_freq,
+                (int, float, list),
             )
-        )
-        self.print_msg = False
+        ):
+            raise TypeError(
+                "exc_freq must be an int, float, "
+                "or list of EitFrequencyBlock."
+            )
+
+        if isinstance(exc_freq, (int, float)):
+            frequency_blocks = [
+                EitFrequencyBlock(
+                    f_min=exc_freq,
+                    f_max=exc_freq,
+                    f_count=1,
+                    f_type="lin",
+                )
+            ]
+        else:
+            frequency_blocks = exc_freq
+
+        if not frequency_blocks:
+            raise ValueError(
+                "The frequency block list cannot be empty."
+            )
+
+        total_frequency_count = 0
+
+        for block in frequency_blocks:
+            if not isinstance(block, EitFrequencyBlock):
+                raise TypeError(
+                    "Every frequency block must be an "
+                    "EitFrequencyBlock instance."
+                )
+
+            if (
+                isinstance(block.f_min, bool)
+                or not isinstance(
+                    block.f_min,
+                    (int, float),
+                )
+            ):
+                raise TypeError(
+                    "f_min must be an int or float."
+                )
+
+            if (
+                isinstance(block.f_max, bool)
+                or not isinstance(
+                    block.f_max,
+                    (int, float),
+                )
+            ):
+                raise TypeError(
+                    "f_max must be an int or float."
+                )
+
+            if block.f_min <= 0 or block.f_max <= 0:
+                raise ValueError(
+                    "Frequencies must be greater than zero."
+                )
+
+            if block.f_min > block.f_max:
+                raise ValueError(
+                    "f_min cannot be greater than f_max."
+                )
+
+            if (
+                isinstance(block.f_count, bool)
+                or not isinstance(block.f_count, int)
+            ):
+                raise TypeError(
+                    "f_count must be an integer."
+                )
+
+            if not 1 <= block.f_count <= 128:
+                raise ValueError(
+                    "f_count must be between 1 and 128."
+                )
+
+            frequency_type_map = {
+                "lin": 0,
+                "linear": 0,
+                "log": 1,
+                "logarithmic": 1,
+            }
+
+            normalized_type = block.f_type.lower()
+
+            if normalized_type not in frequency_type_map:
+                raise ValueError(
+                    "f_type must be 'lin' or 'log'."
+                )
+
+            total_frequency_count += block.f_count
+
+            if total_frequency_count > 128:
+                raise ValueError(
+                    "The total frequency count of all "
+                    "blocks cannot exceed 128."
+                )
+
+        previous_print_msg = self.print_msg
+        self.print_msg = True
+
+        try:
+            for block in frequency_blocks:
+                f_min = clTbt_sp(block.f_min)
+                f_max = clTbt_sp(block.f_max)
+
+                f_count = list(
+                    block.f_count.to_bytes(
+                        2,
+                        byteorder="big",
+                        signed=False,
+                    )
+                )
+
+                frequency_type_map = {
+                    "lin": 0,
+                    "linear": 0,
+                    "log": 1,
+                    "logarithmic": 1,
+                }
+
+                f_type = [
+                    frequency_type_map[
+                        block.f_type.lower()
+                    ]
+                ]
+
+                command = bytearray(
+                    list(
+                        np.concatenate(
+                            [
+                                [176, 12, 4],
+                                f_min,
+                                f_max,
+                                f_count,
+                                f_type,
+                                [176],
+                            ]
+                        )
+                    )
+                )
+
+                self.write_command_string(command)
+
+        finally:
+            self.print_msg = previous_print_msg
 
     def SetMeasurementSetup(self, setup: EitMeasurementSetup):
         """
@@ -385,19 +524,9 @@ class EIT_16_32_64_128:
                 list(np.concatenate([[176, 5, 3], clTbt_sp(setup.framerate), [176]]))
             )
         )
-        # Set frequencies:
-        # [CT] 0C 04 [fmin] [fmax] [fcount] [ftype] [CT]
-        f_min = clTbt_sp(setup.exc_freq)
-        f_max = clTbt_sp(setup.exc_freq)
-        f_count = [0, 1]
-        f_type = [0]  # linear/log
-        # bytearray
-        self.write_command_string(
-            bytearray(
-                list(
-                    np.concatenate([[176, 12, 4], f_min, f_max, f_count, f_type, [176]])
-                )
-            )
+        # Add one or several excitation-frequency blocks.
+        self.update_ExcitationFrequency(
+            setup.exc_freq
         )
 
         # Set injection config
