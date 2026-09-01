@@ -199,11 +199,34 @@ class MessageParser:
             if number_of_injection_skips == 0:
                 raise ValueError("inj_skip cannot be empty.")
 
-            self.iNumExcitationSettings = (setup.n_el* number_of_injection_skips)
+            self.iNumExcitationSettings = (
+                setup.n_el * number_of_injection_skips
+            )
 
-            self.iNumFreqSettings = 1
-            self.iLenDataperFrame = (self.iMaxChannelGroups * 16 * self.iNumExcitationSettings * self.iNumFreqSettings)
-            self.iMessagesperFrame = (self.iMaxChannelGroups * self.iNumExcitationSettings * self.iNumFreqSettings)
+            if isinstance(setup.exc_freq, (list, tuple)):
+                self.iNumFreqSettings = sum(
+                    int(block.f_count)
+                    for block in setup.exc_freq
+                )
+            else:
+                self.iNumFreqSettings = 1
+
+            if self.iNumFreqSettings <= 0:
+                raise ValueError(
+                    "At least one frequency setting is required."
+                )
+
+            self.iLenDataperFrame = (
+                self.iMaxChannelGroups
+                * 16
+                * self.iNumExcitationSettings
+                * self.iNumFreqSettings
+            )
+            self.iMessagesperFrame = (
+                self.iMaxChannelGroups
+                * self.iNumExcitationSettings
+                * self.iNumFreqSettings
+            )
 
             # ALL needed
             self.reset_new_data_frame()
@@ -222,13 +245,17 @@ class MessageParser:
         self.CurrentFrame = EITFrame(
             n_el=self.setup.n_el,
             excitation_stgs=np.zeros((self.iNumExcitationSettings, 2), dtype=int),
-            frequency_stgs=np.zeros((self.iNumFreqSettings,), dtype=int),
-            # todo fill in setup freq settings
+            frequency_stgs=np.arange(
+                1,
+                self.iNumFreqSettings + 1,
+                dtype=int,
+            ),
             timestamp1=0,
             timestamp2=0,
             timestamp_pc=0,
             ppcData=np.zeros(
-                self.iMaxChannelGroups * 16 * self.iNumExcitationSettings, dtype=complex
+                self.iLenDataperFrame,
+                dtype=complex,
             ),
         )
 
@@ -529,18 +556,62 @@ def make_results_folder(bCreateResultsFolder: bool, bSaveData: bool, sSavePath: 
 # -------------------------------------------------------------------------------------------------------------------- #
 def get_data_as_matrix(FrameList):
     """
-    List of EITFrames to be reshaped into matrix of [Number frames, num injection settings, n_el]
+    Convert parsed EIT frames into a complex NumPy array.
+
+    For one frequency, preserve the historic shape::
+
+        [frames, excitation settings, channels]
+
+    For multiple frequencies, return::
+
+        [frames, excitation settings, frequency settings, channels]
+
     Args:
-        FrameList: List of EITFrames to be reshaped into matrix
+        FrameList: List of EITFrames to reshape.
 
     Returns:
-            np.array of eit data of shape [Number frames, num injection settings, n_el]
+        NumPy array containing the complex measurement data.
     """
     result = []
-    for f in FrameList:
-        L = len(f.ppcData) // len(f.excitation_stgs)
-        result.append(np.reshape(f.ppcData, (len(f.excitation_stgs), L)))
-    return np.array(result)
+    for frame in FrameList:
+        number_of_excitations = len(frame.excitation_stgs)
+        number_of_frequencies = len(frame.frequency_stgs)
+
+        if number_of_excitations == 0:
+            raise ValueError(
+                "EIT frame contains no excitation settings."
+            )
+
+        if number_of_frequencies == 0:
+            raise ValueError(
+                "EIT frame contains no frequency settings."
+            )
+
+        number_of_values = len(frame.ppcData)
+        divisor = number_of_excitations * number_of_frequencies
+
+        if number_of_values % divisor != 0:
+            raise ValueError(
+                "EIT frame data cannot be reshaped into "
+                "excitation and frequency settings."
+            )
+
+        number_of_channels = number_of_values // divisor
+        frame_data = np.reshape(
+            frame.ppcData,
+            (
+                number_of_excitations,
+                number_of_frequencies,
+                number_of_channels,
+            ),
+        )
+
+        if number_of_frequencies == 1:
+            frame_data = frame_data[:, 0, :]
+
+        result.append(frame_data)
+
+    return np.asarray(result)
 
 
 # -------------------------------------------------------------------------------------------------------------------- #

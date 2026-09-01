@@ -2,10 +2,15 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from sciopy.sciopy_dataclasses import EITFrame
+from sciopy.sciopy_dataclasses import (
+    EITFrame,
+    EitFrequencyBlock,
+    EitMeasurementSetup,
+)
 from sciopy.usb_message_parser import (
     MessageParser,
     describe_message,
+    get_data_as_matrix,
     load_eit_frames,
     save_data_frame,
 )
@@ -91,6 +96,138 @@ def test_acknowledgement_is_labelled_with_its_pending_command(capsys):
     assert "Command-Acknowledge: Command has been executed successfully" in output
     assert parser.pending_command is None
 
+def test_parser_allocates_buffer_for_all_frequency_settings():
+    setup = EitMeasurementSetup(
+        burst_count=2,
+        n_el=16,
+        exc_freq=[
+            EitFrequencyBlock(
+                f_min=1_000,
+                f_max=10_000,
+                f_count=10,
+                f_type="lin",
+            ),
+            EitFrequencyBlock(
+                f_min=10_000,
+                f_max=100_000,
+                f_count=20,
+                f_type="log",
+            ),
+        ],
+        framerate=2.0,
+        amplitude=0.001,
+        inj_skip=0,
+        gain=1,
+        adc_range=1,
+    )
+
+    parser = MessageParser(
+        Mock(),
+        eitsetup=setup,
+    )
+
+    assert parser.iNumFreqSettings == 30
+    assert parser.iNumExcitationSettings == 16
+    assert parser.iLenDataperFrame == 16 * 30 * 16
+    assert len(parser.CurrentFrame.ppcData) == 16 * 30 * 16
+
+    assert np.array_equal(
+        parser.CurrentFrame.frequency_stgs,
+        np.arange(1, 31),
+    )
+
+
+def test_get_data_as_matrix_preserves_single_frequency_shape():
+    frame = EITFrame(
+        n_el=3,
+        excitation_stgs=np.array(
+            [
+                [1, 2],
+                [2, 3],
+            ]
+        ),
+        frequency_stgs=np.array([1]),
+        timestamp1=0,
+        timestamp2=0,
+        timestamp_pc=0,
+        ppcData=np.arange(
+            6,
+            dtype=np.complex128,
+        ),
+    )
+
+    result = get_data_as_matrix(
+        [frame]
+    )
+
+    assert result.shape == (
+        1,
+        2,
+        3,
+    )
+
+    assert np.array_equal(
+        result[0],
+        np.array(
+            [
+                [0, 1, 2],
+                [3, 4, 5],
+            ]
+        ),
+    )
+
+
+def test_get_data_as_matrix_adds_frequency_axis_for_sweep():
+    frame = EITFrame(
+        n_el=3,
+        excitation_stgs=np.array(
+            [
+                [1, 2],
+                [2, 3],
+            ]
+        ),
+        frequency_stgs=np.array(
+            [1, 2]
+        ),
+        timestamp1=0,
+        timestamp2=0,
+        timestamp_pc=0,
+        ppcData=np.arange(
+            12,
+            dtype=np.complex128,
+        ),
+    )
+
+    result = get_data_as_matrix(
+        [frame]
+    )
+
+    assert result.shape == (
+        1,
+        2,
+        2,
+        3,
+    )
+
+    assert np.array_equal(
+        result[0, 0, 0],
+        [0, 1, 2],
+    )
+
+    assert np.array_equal(
+        result[0, 0, 1],
+        [3, 4, 5],
+    )
+
+    assert np.array_equal(
+        result[0, 1, 0],
+        [6, 7, 8],
+    )
+
+    assert np.array_equal(
+        result[0, 1, 1],
+        [9, 10, 11],
+    )
 
 def test_saved_eit_frame_round_trips_and_ignores_other_files(tmp_path):
     frame = EITFrame(
