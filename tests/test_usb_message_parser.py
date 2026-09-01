@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+import struct
 
 import numpy as np
 
@@ -227,6 +228,155 @@ def test_get_data_as_matrix_adds_frequency_axis_for_sweep():
     assert np.array_equal(
         result[0, 1, 1],
         [9, 10, 11],
+    )    
+def test_parser_collects_all_frequency_rows_into_one_frame():
+    setup = EitMeasurementSetup(
+        burst_count=1,
+        n_el=16,
+        exc_freq=[
+            EitFrequencyBlock(
+                f_min=1_000,
+                f_max=1_000,
+                f_count=1,
+                f_type="lin",
+            ),
+            EitFrequencyBlock(
+                f_min=2_000,
+                f_max=2_000,
+                f_count=1,
+                f_type="lin",
+            ),
+        ],
+        framerate=2.0,
+        amplitude=0.001,
+        inj_skip=0,
+        gain=1,
+        adc_range=1,
+    )
+
+    parser = MessageParser(
+        Mock(),
+        eitsetup=setup,
+    )
+
+    def make_data_message(
+        excitation_out,
+        excitation_in,
+        frequency_row,
+    ):
+        message = [
+            0xB4,
+            0x84,
+            0x01,
+            excitation_out,
+            excitation_in,
+        ]
+
+        message.extend(
+            frequency_row.to_bytes(
+                2,
+                byteorder="big",
+            )
+        )
+
+        message.extend(
+            struct.pack(
+                ">f",
+                0.0,
+            )
+        )
+
+        for channel in range(16):
+            value = (
+                excitation_out * 100
+                + frequency_row * 10
+                + channel
+            )
+
+            message.extend(
+                struct.pack(
+                    ">f",
+                    float(value),
+                )
+            )
+
+            message.extend(
+                struct.pack(
+                    ">f",
+                    float(-value),
+                )
+            )
+
+        message.append(
+            0xB4
+        )
+
+        return message
+
+    message_count = 0
+
+    for excitation_out in range(
+        1,
+        17,
+    ):
+        excitation_in = (
+            excitation_out % 16
+        ) + 1
+
+        for frequency_row in (
+            1,
+            2,
+        ):
+            parser.interpret_data_input(
+                make_data_message(
+                    excitation_out,
+                    excitation_in,
+                    frequency_row,
+                )
+            )
+
+            message_count += 1
+
+            if message_count < 32:
+                assert len(
+                    parser.ppcData
+                ) == 0
+
+    assert len(parser.ppcData) == 1
+
+    frame = parser.ppcData[0]
+
+    assert frame.excitation_stgs.shape == (
+        16,
+        2,
+    )
+
+    assert np.array_equal(
+        frame.frequency_stgs,
+        [1, 2],
+    )
+
+    result = get_data_as_matrix(
+        parser.ppcData
+    )
+
+    assert result.shape == (
+        1,
+        16,
+        2,
+        16,
+    )
+
+    assert result[0, 0, 0, 0] == (
+        110 - 110j
+    )
+
+    assert result[0, 0, 1, 0] == (
+        120 - 120j
+    )
+
+    assert result[0, 15, 1, 15] == (
+        1_635 - 1_635j
     )
 
 def test_saved_eit_frame_round_trips_and_ignores_other_files(tmp_path):
